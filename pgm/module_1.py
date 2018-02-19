@@ -1,4 +1,4 @@
-# Load the faces & non-faces dataset to compute mean and covariance
+# Module 1 - Gaussian Distribution Model
 import cv2
 import os
 import matplotlib.pyplot as plt
