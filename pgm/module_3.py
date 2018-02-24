@@ -1,4 +1,4 @@
-# Module - t Distribution Model
+# Module 3 - t Distribution Model
 import cv2
 import os
 import matplotlib.pyplot as plt
@@ -56,10 +56,9 @@ def near_psd(x, epsilon=0):
 def t_cost(nu, E_h_i, E_h_i_sum, E_log_h_i, E_log_h_i_sum):
     nu_half = nu / 2
     size = 1000
-    val = size * (nu_half * np.log(nu_half) + special.gammaln(nu_half))
+    val = -1 * size * nu_half * np.log(nu_half) + special.gammaln(nu_half)
     val = val - ((nu_half - 1) * E_log_h_i_sum)
     val = val + (nu_half * E_h_i_sum)
-    val = -1 * val
     return val
 
 D = 100
