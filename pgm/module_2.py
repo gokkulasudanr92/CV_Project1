@@ -511,5 +511,3 @@ for K in range(2, 5):
     non_faces_mean_k.append(mean_k)
     non_faces_sig_k.append(sig_k)
     non_faces_covariance_epsilon.append(covariance_epsilon)
-
-## Compute posterior
