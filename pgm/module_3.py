@@ -172,6 +172,7 @@ while True:
         temp = special.psi((nu_k + D) / 2) - np.log(nu_k / 2 + delta_i[0, i] / 2)
         E_log_h_i[0, i] = temp
 
+    ## Maximization Step
     # Update new mean
     E_h_i_sum = np.sum(E_h_i, axis = 1)
     new_mean_k = np.zeros((1, D))
@@ -200,7 +201,7 @@ while True:
     new_nu = optimize.fminbound(t_cost, 0, 10, args=(E_h_i, E_h_i_sum, E_log_h_i, E_log_h_i_sum))
     nu_k = new_nu
 
-    # Compute Log likelihood
+    ## Compute Log likelihood
     new_delta_i = np.zeros((1, 1000))
     sig_k_inverse = np.linalg.inv(sig_k)
     for i in range(0, 1000):
@@ -302,6 +303,7 @@ while True:
         temp = special.psi((nu_k + D) / 2) - np.log(nu_k / 2 + delta_i[0, i] / 2)
         E_log_h_i[0, i] = temp
 
+    ## Maximization Step
     # Update new mean
     E_h_i_sum = np.sum(E_h_i, axis = 1)
     new_mean_k = np.zeros((1, D))
@@ -330,7 +332,7 @@ while True:
     new_nu = optimize.fminbound(t_cost, 0, 10, args=(E_h_i, E_h_i_sum, E_log_h_i, E_log_h_i_sum))
     nu_k = new_nu
 
-    # Compute Log likelihood
+    ## Compute Log likelihood
     new_delta_i = np.zeros((1, 1000))
     sig_k_inverse = np.linalg.inv(sig_k)
     for i in range(0, 1000):
@@ -384,4 +386,4 @@ non_faces_sig_k = sig_k
 # print non_faces_sig_k.shape
 # print non_faces_sig_k
 
-print multivariate_t(dataset_matrix, non_faces_mean_k, non_faces_sig_k, non_faces_nu_k, D, 1000)
+# print multivariate_t(dataset_matrix, non_faces_mean_k, non_faces_sig_k, non_faces_nu_k, D, 1000)
