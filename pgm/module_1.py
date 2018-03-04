@@ -8,6 +8,107 @@ from sklearn.decomposition import PCA
 from scipy.stats import multivariate_normal
 import math
 
+def save_mean_image(filename, mean, image_dim):
+    temp_mean = mean.reshape((image_dim, image_dim))
+    cv2.imwrite(filename, temp_mean)
+    print "Saving Image at - " + filename
+    return
+
+def save_covariance_image(filename, covariance, image_dim):
+    covariance_diag = covariance.diagonal()
+    max_val = max(covariance_diag)
+    covariance_diag = covariance_diag * 255 / max_val
+    image = covariance_diag.reshape((image_dim, image_dim))
+    image = np.array(np.round(image), dtype = np.uint8)
+    cv2.imwrite(filename, image)
+    print "Saving Image at - " + filename
+    return
+def average_of_pdf(pdf, testImagesSize):
+    avg = 0.0
+    for i in pdf:
+        avg += i
+    avg /= testImagesSize
+    return avg
+
+def compute_posterior(faces_pdf, non_faces_pdf, threshold, testImagesSize):
+    true_positive = 0
+    false_positive = 0    
+    true_negative = 0
+    false_negative = 0
+
+    faces_pdf_avg = average_of_pdf(faces_pdf, testImagesSize)
+    non_faces_pdf_avg = average_of_pdf(non_faces_pdf, testImagesSize)
+
+    for i in range(0, testImagesSize - 100):
+        if faces_pdf[i] == 0.0:
+            f = faces_pdf_avg
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] == 0.0:
+            nf = non_faces_pdf_avg * (10 ** -10)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+        
+        if (not math.isnan(z) and z > threshold):
+            true_positive += 1
+        else:
+            false_negative += 1
+
+    for i in range(100, testImagesSize):
+        if faces_pdf[i] == 0.0:
+            f = faces_pdf_avg * (10 ** -10)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] == 0.0:
+            nf = non_faces_pdf_avg
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+
+        if (not math.isnan(z) and z > threshold):
+            false_positive += 1
+        else:
+            true_negative += 1
+
+    # Misclassification Rate
+    misclassification_rate = float(false_positive + false_negative) / float(testImagesSize)
+    misclassification_rate = misclassification_rate * 100
+    return true_positive, false_negative, false_positive, true_negative, misclassification_rate
+
+def compute_posterior_pdf(faces_pdf, non_faces_pdf, testImagesSize):
+    posterior_pdf = [0.0] * testImagesSize
+
+    faces_pdf_avg = average_of_pdf(faces_pdf, testImagesSize)
+    non_faces_pdf_avg = average_of_pdf(non_faces_pdf, testImagesSize)
+    
+    for i in range(0, testImagesSize):
+        if faces_pdf[i] == 0.0:
+            f = faces_pdf_avg * (10 ** -10)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] == 0.0:
+            nf = non_faces_pdf_avg * (10 ** -10)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+
+        if (not math.isnan(z)):
+            posterior_pdf[i] = z
+    return posterior_pdf
+
 training_faces_folder = "../training/faces/"
 faces_images = []
 faces_images_rescaled_grayscale = []
@@ -38,35 +139,12 @@ faces_mean = faces_mean.reshape((60, 60, 3))
 faces_mean_image = np.array(np.round(faces_mean), dtype = np.uint8)
 faces_mean_1d = faces_mean.reshape((10800, 1))
 
-'''
-# Constructing co variance matrix for faces training
-f = True
-faces_file = "faces_covariance.npy"
-faces_covariance = np.zeros((10800, 10800))
-for im in faces_images:
-    if f:
-        break
-    key = im
-    X_i = key.reshape((10800, 1))
-    X_i = X_i - faces_mean_1d
-    faces_covariance += np.matmul(X_i, X_i.T)
-
-if not f:
-    faces_covariance = faces_covariance / 1000
-    np.save(faces_file, faces_covariance)
-else:
-    faces_covariance = np.load(faces_file)
-'''
-#faces_covariance_sqrt = np.sqrt(faces_covariance)
 faces_covariance = np.cov(faces_matrix.T)
 faces_covariance_diag = faces_covariance.diagonal()
 max_faces_diag = max(faces_covariance_diag)
 faces_covariance_diag = faces_covariance_diag * 255 / max_faces_diag
 faces_covariance_image = faces_covariance_diag.reshape((60, 60, 3))
 faces_covariance_image = np.array(np.round(faces_covariance_image), dtype = np.uint8)
-#faces_covariance_im = np.array(np.round(faces_covariance), dtype = np.uint8)
-#(faces_sign, faces_covariance_logdet) = np.linalg.slogdet(faces_covariance_im)
-#print(faces_sign, faces_covariance_logdet)
 
 training_non_faces_folder = "../training/non_faces/"
 non_faces_images = []
@@ -97,36 +175,12 @@ non_faces_mean = non_faces_mean.reshape((60, 60, 3))
 non_faces_mean_image = np.array(np.round(non_faces_mean), dtype = np.uint8)
 non_faces_mean_1d = non_faces_mean.reshape((10800, 1))
 
-'''
-# Constructing the covariance matrix for non-faces
-f = True
-non_faces_file = "non_faces_covariance.npy"
-non_faces_covariance = np.zeros((10800, 10800))
-for im in non_faces_images:
-    if f:
-        break
-    key = im
-    X_i = key.reshape((10800, 1))
-    X_i = X_i - non_faces_mean_1d
-    non_faces_covariance += np.matmul(X_i, X_i.T)
-
-if not f:
-    non_faces_covariance = non_faces_covariance / 1000
-    np.save(non_faces_file, non_faces_covariance)
-else:
-    non_faces_covariance = np.load(non_faces_file)
-'''
-
-#non_faces_covariance_sqrt = np.sqrt(non_faces_covariance)
 non_faces_covariance = np.cov(non_faces_matrix.T)
 non_faces_covariance_diag = non_faces_covariance.diagonal()
 max_non_faces_diag = max(non_faces_covariance_diag)
 non_faces_covariance_diag = non_faces_covariance_diag * 255 / max_non_faces_diag
 non_faces_covariance_image = non_faces_covariance_diag.reshape((60, 60, 3))
 non_faces_covariance_image = np.array(np.round(non_faces_covariance_image), dtype = np.uint8)
-#non_faces_covariance_im = np.array(np.round(non_faces_covariance), dtype = np.uint8)
-#(non_faces_sign, non_faces_covariance_logdet) = np.linalg.slogdet(non_faces_covariance_im)
-#print(non_faces_sign, non_faces_covariance_logdet)
 
 # Computing mean and covariance for faces grayscale images
 faces_grayscale_tuple_list = []
@@ -153,37 +207,6 @@ non_faces_grayscale_matrix = np.vstack(non_faces_grayscale_tuple)
 
 non_faces_grayscale_mean = np.mean(non_faces_grayscale_matrix, axis = 0)
 non_faces_grayscale_covariance = np.cov(non_faces_grayscale_matrix.T)
-
-'''
-X = faces_images[0].reshape((10800, 1))
-
-faces_mean_1d = faces_mean_image.reshape((10800, 1))
-temp = (X - faces_mean_1d)
-faces_covariance_inverse = np.linalg.inv(faces_covariance)
-faces_covariance_inverse_max = np.amax(faces_covariance_inverse)
-faces_covariance_inverse = faces_covariance_inverse * 0.00001 / faces_covariance_inverse_max
-faces_exp = np.matmul(temp.T, faces_covariance_inverse)
-faces_exp = np.matmul(faces_exp, temp)
-
-non_faces_mean_1d = non_faces_mean_image.reshape((10800, 1))
-temp2 = (X - non_faces_mean_1d)
-non_faces_covariance_inverse = np.linalg.inv(non_faces_covariance)
-non_faces_covariance_inverse_max = np.amax(non_faces_covariance_inverse)
-non_faces_covariance_inverse = non_faces_covariance_inverse * 0.00001 / non_faces_covariance_inverse_max
-non_faces_exp = np.matmul(temp2.T, non_faces_covariance_inverse)
-non_faces_exp = np.matmul(non_faces_exp, temp2)
-
-non_faces_exp = non_faces_exp / 2
-faces_exp = faces_exp / 2
-t = faces_covariance_logdet / 2 - non_faces_covariance_logdet / 2 - non_faces_exp + faces_exp
-
-print(t)
-print(faces_exp)
-print(non_faces_exp)
-
-print(faces_covariance_inverse[5400])
-print(non_faces_covariance_inverse[5400])
-'''
 
 test_tuple_list = []
 # Faces MVN Builder
@@ -226,60 +249,66 @@ test_matrix = np.vstack(test_tuple)
 faces_pdf = faces_mvn.pdf(test_matrix)
 non_faces_pdf = non_faces_mvn.pdf(test_matrix)
 
-#print(faces_pdf.shape)
-#print(non_faces_pdf.shape)
+DEFAULT_RESULT_LOCATION = "./results/module_1/"
+
+# Save Mean Face Result
+faces_mean_filename = DEFAULT_RESULT_LOCATION + "mean/faces.jpg"
+save_mean_image(faces_mean_filename, faces_grayscale_mean, 13)
+
+# Save Mean Non-Face Result
+non_faces_mean_filename = DEFAULT_RESULT_LOCATION + "mean/non_faces.jpg"
+save_mean_image(non_faces_mean_filename, non_faces_grayscale_mean, 13)
+
+# Save Covariance Face Result
+faces_covariance_filename = DEFAULT_RESULT_LOCATION + "covariance/faces.jpg"
+save_covariance_image(faces_covariance_filename, faces_grayscale_covariance, 13)
+
+# Save Covariance Non-Face Result
+non_faces_covariance_filename = DEFAULT_RESULT_LOCATION + "covariance/non_faces.jpg"
+save_covariance_image(non_faces_covariance_filename, non_faces_grayscale_covariance, 13)
 
 # Compute Posterior
-faces_true_positive = 0
-faces_false_positive = 0
-faces_true_negative = 0
-faces_false_negative = 0
+true_positive, false_negative, false_positive, true_negative, misclassification_rate = compute_posterior(faces_pdf, non_faces_pdf, 0.5, 200)
+print
+print "## Confusion Matrix ##"
+print str(true_positive), "  ", str(false_negative)
+print str(false_positive), "  ", str(true_negative)
+print
+print "False Positive Rate: ", str(false_positive), "%"
+print "False Negative Rate: ", str(false_negative), "%"
+print "Misclassification Rate: ", str(misclassification_rate), "%"
+print
 
-for i in range(0, 100):
-    y = faces_pdf[i] + non_faces_pdf[i]
-    x = faces_pdf[i]
-    z = x / y
-    if (not math.isnan(z) and z >= 0.5):
-        faces_true_positive += 1
-    else:
-        faces_false_negative += 1
+# ROC Curve plot
+false_positives = []
+true_positives = []
 
-for i in range(100, 200):
-    y = faces_pdf[i] + non_faces_pdf[i]
-    x = faces_pdf[i]
-    z = x / y
-    if (not math.isnan(z) and z >= 0.5):
-        faces_false_positive += 1
-    else:
-        faces_true_negative += 1
+# Find the nearest power for the lowest posterior value
+posterior_pdf = compute_posterior_pdf(faces_pdf, non_faces_pdf, 200)
+lowest_posterior_value = min(posterior_pdf)
+maximum_posterior_value = max(posterior_pdf)
+power_count = 0
+temp = lowest_posterior_value
 
-print(faces_true_positive, faces_false_negative)
-print(faces_false_positive, faces_true_negative)
+while temp < 1.0 and temp > 0.0:
+    temp = temp * (10 ** power_count)
+    power_count += 1
 
-#print(20000 - non_faces_exp[0][0] - faces_exp[0][0])
+power_count = -1 * power_count
 
-#for im in faces_images:
-#    key = im
-#    im_reshape = key.reshape((10800, 1))
-#    faces_tuple_list.append(im_reshape - faces_mean_1d)
+# Compute ROC Curve
+initial_limit = maximum_posterior_value
+end_limit = 0.0 - (10 ** -5)
 
-#print(len(faces_tuple))
+for i in np.arange(initial_limit, end_limit, -1 * (10 ** -5)):
+        tp, _, fp, _, _ = compute_posterior(faces_pdf, non_faces_pdf, i, 200)
+        false_positives.append(float(fp) / float(100))
+        true_positives.append(float(tp) / float(100))
 
-#temp = np.vstack(faces_tuple)
-#print(np.transpose(temp).shape)
-#faces_covariance = np.cov(temp)
-
-#t1 = np.array(temp)
-#t2 = np.transpose(t1)
-#faces_covariance = np.matmul(t1, t2)
-#faces_covariance /= (faces_size - 1)
-#faces_covariance_diag = faces_covariance[:,0]
-
-#faces_covariance_image = faces_covariance_diag.reshape((60, 60, 3))
-#print(faces_covariance.shape)
-
-#plt.subplot(131)
-#plt.imshow(faces_covariance_image)
-#plt.subplot(132)
-#plt.imshow(faces_mean)
-#plt.show()
+plt.title('Receiver Operating Characteristic (ROC)')
+plt.xlim([0, 1])
+plt.ylim([0, 1])
+plt.ylabel('True Positive Rate')
+plt.xlabel('False Positive Rate')
+plt.plot(false_positives, true_positives, marker='o')
+plt.show()

@@ -98,7 +98,7 @@ faces_sig_k = []
 faces_covariance_epsilon = []
 
 # Initializing values for lambda_k, mean_k and sig_k
-for K in range(2, 5):
+for K in range(2, 6):
     # Lambda_k value
     lambda_k = []
     for i in range(0, K):
