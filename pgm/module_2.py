@@ -68,6 +68,67 @@ def save_covariance_image(filename, covariance, image_dim):
     print "Saving Image at - " + filename
     return
 
+def average_of_pdf(pdf, testImagesSize):
+    avg = 0.0
+    for i in pdf:
+        avg += i
+    avg /= testImagesSize
+    return avg
+
+def compute_posterior(faces_pdf, non_faces_pdf, threshold, testImagesSize):
+    true_positive = 0
+    false_positive = 0    
+    true_negative = 0
+    false_negative = 0
+
+    faces_pdf_avg = average_of_pdf(faces_pdf, testImagesSize)
+    non_faces_pdf_avg = average_of_pdf(non_faces_pdf, testImagesSize)
+
+    for i in range(0, testImagesSize - 100):
+        if faces_pdf[i] < (10 ** -310):
+            f = faces_pdf_avg * (10 ** -10)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] < (10 ** -310):
+            nf = non_faces_pdf_avg * (10 ** -10)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+        
+        if (not math.isnan(z) and z > threshold):
+            true_positive += 1
+        else:
+            false_negative += 1
+
+    for i in range(100, testImagesSize):
+        if faces_pdf[i] < (10 ** -310):
+            f = faces_pdf_avg * (10 ** -10)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] < (10 ** -310):
+            nf = non_faces_pdf_avg * (10 ** -10)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+
+        if (not math.isnan(z) and z > threshold):
+            false_positive += 1
+        else:
+            true_negative += 1
+
+    # Misclassification Rate
+    misclassification_rate = float(false_positive + false_negative) / float(testImagesSize)
+    misclassification_rate = misclassification_rate * 100
+    return true_positive, false_negative, false_positive, true_negative, misclassification_rate
+
 training_faces_folder = "../training/faces/"
 faces_images = []
 faces_images_rescaled_grayscale = []
@@ -108,13 +169,13 @@ for i in faces_random_list:
 
 dataset_matrix = np.vstack(tuple(dataset_images))
 
-faces_lamda_k = []
+faces_lambda_k = []
 faces_mean_k = []
 faces_sig_k = []
 faces_covariance_epsilon = []
 
 # Initializing values for lambda_k, mean_k and sig_k
-for K in range(2, 6):
+for K in range(2, 5):
     # Lambda_k value
     lambda_k = []
     for i in range(0, K):
@@ -239,12 +300,11 @@ for K in range(2, 6):
         L = np.sum(temp_log)
 
         iterations += 1
-
         if abs(L - previous_L) < precision or iterations > 20:
             break
         else:
             previous_L = L
-    faces_lamda_k.append(lambda_k)
+    faces_lambda_k.append(lambda_k)
     faces_mean_k.append(mean_k)
     faces_sig_k.append(sig_k)
     faces_covariance_epsilon.append(covariance_epsilon)
@@ -389,12 +449,130 @@ for K in range(2, 5):
         L = np.sum(temp_log)
 
         iterations += 1
-
         if abs(L - previous_L) < precision or iterations > 20:
             break
         else:
             previous_L = L
-    non_faces_images_rescaled_gray.append(lambda_k)
+    non_faces_lambda_k.append(lambda_k)
     non_faces_mean_k.append(mean_k)
     non_faces_sig_k.append(sig_k)
     non_faces_covariance_epsilon.append(covariance_epsilon)
+
+## Test Dataset
+test_tuple_list = []
+faces_test_images = []
+test_faces_folder = "../test/faces/"
+for filename in os.listdir(test_faces_folder):
+    img = cv2.imread(os.path.join(test_faces_folder, filename), flags = cv2.IMREAD_COLOR)
+    Gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    Gray_img = cv2.resize(Gray_img, (7, 7))
+    if img is not None:
+        faces_test_images.append(Gray_img)
+
+for im in faces_test_images:
+    key = im
+    im_reshape = key.reshape((1, 49))
+    test_tuple_list.append(im_reshape)
+
+non_faces_test_images = []
+test_non_faces_folder = "../test/non_faces/"
+for filename in os.listdir(test_non_faces_folder):
+    img = cv2.imread(os.path.join(test_non_faces_folder, filename), flags = cv2.IMREAD_COLOR)
+    Gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    Gray_img = cv2.resize(Gray_img, (7, 7))
+    if img is not None:
+        non_faces_test_images.append(Gray_img)
+
+for im in non_faces_test_images:
+    key = im
+    im_reshape = key.reshape((1, 49))
+    test_tuple_list.append(im_reshape)
+
+test_tuple = tuple(test_tuple_list)
+test_matrix = np.vstack(test_tuple)
+
+DEFAULT_RESULT_LOCATION = "./results/module_2/"
+
+for K in range(2, 5):
+    for i in range(0, K):
+        # Save Mean Faces Result
+        faces_mean_filename = DEFAULT_RESULT_LOCATION + "mog_" + str(K) + "/mean/faces_" + str(i) + ".jpg"
+        faces_mean = faces_mean_k[K - 2][i, :]
+        save_mean_image(faces_mean_filename, faces_mean, 7)
+
+        # Save Mean Non Faces Result
+        non_faces_mean_filename = DEFAULT_RESULT_LOCATION + "mog_" + str(K) + "/mean/non_faces_" + str(i) + ".jpg"
+        non_faces_mean = non_faces_mean_k[K - 2][i, :]
+        save_mean_image(non_faces_mean_filename, non_faces_mean, 7)
+
+        # Save Covariance Faces Result
+        faces_covariance_filename = DEFAULT_RESULT_LOCATION + "mog_" + str(K) + "/covariance/faces_" + str(i) + ".jpg"
+        faces_covariance = faces_sig_k[K - 2][:, :, i]
+        save_covariance_image(faces_covariance_filename, faces_covariance, 7)
+
+        # Save Covariance Non Faces Result
+        non_faces_covariance_filename = DEFAULT_RESULT_LOCATION + "mog_" + str(K) + "/covariance/non_faces_" + str(i) + ".jpg"
+        non_faces_covariance = non_faces_sig_k[K - 2][:, :, i]
+        save_covariance_image(non_faces_covariance_filename, non_faces_covariance, 7)
+
+
+# Compute Posterior
+faces_pdf_k = []
+non_faces_pdf_k = []
+for K in range(2, 5):
+    faces_pdf_diff_lambda = []
+    non_faces_pdf_diff_lambda = []
+    for i in range(0, K):
+        ## Generate Faces PDFs
+        faces_nearest_cov = faces_sig_k[K - 2][:, :, i]
+        if faces_covariance_epsilon[K - 2][i] > 0.0:
+            faces_nearest_cov = near_psd(faces_nearest_cov, faces_covariance_epsilon[K - 2][i]) 
+        faces_mvn = multivariate_normal(faces_mean_k[K - 2][i, :].reshape(49), nearest_cov)
+        faces_pdf = faces_mvn.pdf(test_matrix)
+        faces_pdf = faces_lambda_k[K - 2][i] * faces_pdf
+        for j in range(0, 200):
+            if faces_pdf[j] == 0.0:
+                faces_pdf[j] = 10 ** -311
+        faces_pdf_diff_lambda.append(faces_pdf)
+
+        ## Generate Non-Faces PDFs
+        non_faces_nearest_cov = non_faces_sig_k[K - 2][:, :, i]
+        if non_faces_covariance_epsilon[K - 2][i] > 0.0:
+            non_faces_nearest_cov = near_psd(non_faces_nearest_cov, non_faces_covariance_epsilon[K - 2][i]) 
+        non_faces_mvn = multivariate_normal(non_faces_mean_k[K - 2][i, :].reshape(49), non_faces_nearest_cov)
+        non_faces_pdf = non_faces_mvn.pdf(test_matrix)
+        non_faces_pdf = non_faces_lambda_k[K - 2][i] * non_faces_pdf
+        for j in range(0, 200):
+            if non_faces_pdf[j] == 0.0:
+                non_faces_pdf[j] = 10 ** -311
+        non_faces_pdf_diff_lambda.append(faces_pdf)
+    faces_pdf_k.append(faces_pdf_diff_lambda)
+    non_faces_pdf_k.append(non_faces_pdf_diff_lambda)
+
+# Compute Posterior
+cumulative_faces_pdf_k = []
+cumulative_non_faces_pdf_k = []
+for K in range(2, 5):
+    cumulative_faces_pdf = [0.0] * 200
+    cumulative_non_faces_pdf = [0.0] * 200
+    for j in range(0, 200):
+        faces_sum = 0.0
+        non_faces_sum = 0.0
+        for i in range(0, K):
+            faces_sum += faces_pdf_k[K - 2][i][j]
+            non_faces_sum += non_faces_pdf_k[K - 2][i][j]
+        cumulative_faces_pdf[j] = faces_sum
+        cumulative_non_faces_pdf[j] = non_faces_sum
+    
+    true_positive, false_negative, false_positive, true_negative, misclassification_rate = compute_posterior(cumulative_faces_pdf, cumulative_non_faces_pdf, 0.5, 200)
+    print
+    print "## Confusion Matrix ##"
+    print str(true_positive), "  ", str(false_negative)
+    print str(false_positive), "  ", str(true_negative)
+    print
+    print "False Positive Rate: ", str(float(false_positive)), "%"
+    print "False Negative Rate: ", str(float(false_negative)), "%"
+    print "Misclassification Rate: ", str(misclassification_rate), "%"
+    print
+    cumulative_faces_pdf_k.append(cumulative_faces_pdf)
+    cumulative_non_faces_pdf_k.append(cumulative_non_faces_pdf)
