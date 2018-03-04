@@ -251,7 +251,141 @@ for k in range(2, K + 1):
     faces_sig_k.append(sig_k)
     faces_nu_k.append(nu_k)
 
+## Mixture of Faces t Distribution
+dataset_images = []
+for i in non_faces_images_rescaled_gray:
+    # for i in faces_images:
+    im_reshape = i.reshape((1, D))
+    dataset_images.append(im_reshape)
+
+dataset_matrix = np.vstack(tuple(dataset_images))
+
+non_faces_nu_k = []
+non_faces_lambda_k = []
+non_faces_mean_k = []
+non_faces_sig_k = []
+non_faces_covariance_epsilon = []
+for k in range(2, K + 1):
+    # Initialize the teta parameters
+    # Initialize Mean
+    mean_k = np.zeros((D, k))
+    means_index = np.random.permutation(1000)
+    for i in range(0, k):
+        mean_k[:, i] = dataset_matrix[means_index[i], :].reshape(D)
+
+    # Initialize Nu to large value
+    nu_k = [10] * k
+
+    # Initialize Sigma
+    sig_k = np.zeros((D, D, k))
+    for j in range(0, k):
+        dataset_variance = np.zeros((D, D))
+        for i in range(0, 1000):
+            x = dataset_matrix[i, :].reshape((1, D))
+            mu = mean_k[:, j].reshape((1, D))
+            temp = x - mu
+            temp = temp.reshape((1, D))
+            dataset_variance = dataset_variance + np.matmul(temp.T, temp)
+        dataset_variance /= 1000
+        sig_k[:, :, j] = dataset_variance
+
+    # Initialize lambda_k
+    lambda_k = [1 / float(k)] * k
+
+    precision = 0.01
+    iterations = 0
+    previous_L = 1000000
+    print k
+    while True:
+        ## Expectation Step
+        # Computing Delta's
+        delta_i = np.zeros((k, 1000))
+        for j in range(0, k):
+            sig_k_inverse = np.linalg.inv(sig_k[:, :, j])
+            for i in range(0, 1000):
+                x = dataset_matrix[i, :].reshape((1, D))
+                mu = mean_k[:, j].reshape((1, D))
+                temp = x - mu
+                temp_delta = np.matmul(temp, sig_k_inverse)
+                temp_delta = np.matmul(temp_delta, temp.T)
+                delta_i[j, i] = temp_delta
+
+        # Compute E[h i]'s
+        E_h_i = np.zeros((k, 1000))
+        for j in range(0, k):
+            for i in range(0, 1000):
+                E_h_i[j, i] = (nu_k[j] + D) / (nu_k[j] + delta_i[j, i])
+
+        # Compute the E[log h i]
+        E_log_h_i = np.zeros((k, 1000))
+        for j in range(0, k):
+            for i in range(0, 1000):
+                temp = special.psi((nu_k[j] + D) / 2) - np.log(nu_k[j] / 2 + delta_i[j, i] / 2)
+                E_log_h_i[j, i] = temp
+        
+        # Compute the l_posterior matrix
+        posterior_matrix = np.zeros((1000, k))
+        for i in range(0, 1000):
+            data_entry = dataset_matrix[i, :].reshape((1, D))
+            for j in range(0, k):
+                posterior_val = multivariate_t(data_entry, mean_k[:, j], sig_k[:, :, j], nu_k[j], D, 1)
+                posterior_matrix[i, j] = lambda_k[j] * posterior_val[0]
+
+        ## Maximization Step
+        # Compute the new lambda_k's
+        posterior_matrix_colwise_sum = np.sum(posterior_matrix, axis = 0)
+        total_posterior_matrix_sum = np.sum(posterior_matrix)
+        for j in range(0, k):
+            lambda_k[j] = posterior_matrix_colwise_sum[j] / total_posterior_matrix_sum
+        
+        # Compute new mean_k's
+        for j in range(0, k):
+            new_mean_k = np.zeros((D, 1))
+            sum_denominator = 0.0
+            for i in range(0, 1000):
+                temp_data = dataset_matrix[i, :].reshape((D, 1))
+                temp_prod = posterior_matrix[i, j] * E_h_i[j, i]
+                temp = temp_prod * temp_data
+                new_mean_k += temp
+                sum_denominator +=  temp_prod
+            new_mean_k /= sum_denominator
+            mean_k[:, j] = new_mean_k.reshape(D)
+
+        # Compute new sig_k's
+        for j in range(0, k):
+            new_sig_k = np.zeros((D, D))
+            sum_denominator = 0.0
+            for i in range(0, 1000):
+                temp_data = dataset_matrix[i, :].reshape((D, 1))
+                temp_mean = mean_k[:, j].reshape((D, 1))
+                temp_data_minus_mean = temp_data - temp_mean
+                temp_prod = posterior_matrix[i, j] * E_h_i[j, i]
+                temp = np.matmul(temp_data_minus_mean, temp_data_minus_mean.T)
+                new_sig_k += temp_prod * temp
+                sum_denominator += temp_prod
+            new_sig_k /= sum_denominator
+            sig_k[:, :, j] = new_sig_k
+        
+        # Compute nu_k's
+        for j in range(0, k):
+            temp = optimize.fminbound(mixture_t_cost_func, 0, 10, args=(D, posterior_matrix, E_h_i, E_log_h_i, j, 1000))
+            # temp = optimize.fsolve(mixture_t_cost_func, 0.0, args=(D, posterior_matrix, E_h_i, E_log_h_i, j, 1000))
+            nu_k[j] = temp
+        
+        iterations += 1
+        if iterations >= 1:
+            break
+    non_faces_lambda_k.append(lambda_k)
+    non_faces_mean_k.append(mean_k)
+    non_faces_sig_k.append(sig_k)
+    non_faces_nu_k.append(nu_k)
+
 print faces_lambda_k
 print faces_nu_k
 print faces_mean_k
 print faces_sig_k
+
+print non_faces_lambda_k
+print non_faces_nu_k
+print non_faces_mean_k
+print non_faces_sig_k
