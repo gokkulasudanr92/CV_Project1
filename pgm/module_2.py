@@ -52,6 +52,22 @@ def near_psd(x, epsilon=0):
     near_cov = np.array([[near_corr[i, j]*(var_list[i]*var_list[j]) for i in xrange(n)] for j in xrange(n)])
     return near_cov
 
+def save_mean_image(filename, mean, image_dim):
+    temp_mean = mean.reshape((image_dim, image_dim))
+    cv2.imwrite(filename, temp_mean)
+    print "Saving Image at - " + filename
+    return
+
+def save_covariance_image(filename, covariance, image_dim):
+    covariance_diag = covariance.diagonal()
+    max_val = max(covariance_diag)
+    covariance_diag = covariance_diag * 255 / max_val
+    image = covariance_diag.reshape((image_dim, image_dim))
+    image = np.array(np.round(image), dtype = np.uint8)
+    cv2.imwrite(filename, image)
+    print "Saving Image at - " + filename
+    return
+
 training_faces_folder = "../training/faces/"
 faces_images = []
 faces_images_rescaled_grayscale = []
@@ -140,23 +156,12 @@ for K in range(2, 6):
         r = np.zeros((K, 100))
 
         for i in range(0, K):
-            # print covariance_epsilon[i]
             if covariance_epsilon[i] > 0.0:
-                # print "I am here"
                 nearest_cov = near_psd(sig_k[:, :, i], covariance_epsilon[i])
                 mvn = multivariate_normal(mean_k[i], nearest_cov) 
             else:
                 mvn = multivariate_normal(mean_k[i], sig_k[:, :, i])
-            # print(mean_k[i])
-            # print(sig_k[:, :, i])
-            # sig_diag = sig_k[:, :, i].diagonal()
-            # max_diag = sig_diag.max()
-            # sig_diag = sig_diag * 255 / max_diag
-            # sig_diag = sig_diag.reshape((7, 7))
-            # diag_image = np.array(np.round(sig_diag), dtype = np.uint8)
-            # cv2.imwrite("./test.jpg", diag_image)
-            # print(sig_diag)
-            # mvn = multivariate_normal(mean_k[i], sig_k[:, :, i])
+            
             pdf = mvn.pdf(dataset_matrix)
             pdf = lambda_k[i] * pdf
             pdf = pdf.reshape((1, 100))
@@ -164,31 +169,12 @@ for K in range(2, 6):
 
         sum_norm = np.sum(norm, axis = 0)
         ## Fitting average value for sum_norm
-        # avg_sum = 0.0
-        # sum_ct = 0
-        # for i in range(0, 100):
-        #     if (sum_norm[i] > 0.0):
-        #         sum_ct += 1
-        #         avg_sum += sum_norm[i]
-
-        # avg_sum /= sum_ct
-        # for i in range(0, 100):
-        #     if (sum_norm[i] == 0.0):
-        #         sum_norm[i] = avg_sum
-        # print(norm.shape)
-        # print(norm)
-        # print(sum_norm.shape)
-        # print(sum_norm)
-        # break
-
         for i in range(0, 100):
             for k in range(0, K):
                 if sum_norm[i] == 0.0:
                     r[k, i] = 0.000001
                 else:
                     r[k, i] = norm[k, i] / sum_norm[i]
-        # print(r)
-        # break
 
         ## Maximization Step
         r_sum_all = np.sum(np.sum(r, axis = 0))
@@ -215,45 +201,20 @@ for K in range(2, 6):
                 new_sig_k += r[k][i] * np.matmul(x, x.T)
             new_sig_k = new_sig_k / r_sum_rows[k]
             sig_k[:, :, k] = new_sig_k
-        # print(lambda_k)
-        # print(mean_k.shape)
-        # print(mean_k)
-        # print(sig_k.shape)
-        # for i in range(0, 49):
-        #     print sig_k[0, i, 0],
-        # print
-        # print
-
-        # for i in range(0, 49):
-        #     print sig_k[1, i, 0],
-        # print
-
-        # print np.amin(sig_k[:, :, 0])
-        # break
             
         ## Compute log likelihood L
         temp = np.zeros((K, 100))
         for i in range(0, K):
             diag = np.amax(sig_k[:, :, i])
-            # print(math.sqrt(diag))
             covariance_epsilon[i] = math.sqrt(diag)
             nearest_cov = near_psd(sig_k[:, :, i], math.sqrt(diag))
-            # print(nearest_cov)
-            # nearest_cov = statsmodels.stats.correlation_tools.cov_nearest(sig_k[:, :, k], method = "nearest", n_fact = 10)
-            # print(nearest_cov_data)
-            # break
             mvn = multivariate_normal(mean_k[i], nearest_cov) 
             pdf = mvn.pdf(dataset_matrix)
             pdf = lambda_k[i] * pdf
             pdf = pdf.reshape((1, 100))
             temp[i, :] = pdf
 
-        # print covariance_epsilon
-        # break
         sum_temp = np.sum(temp, axis = 0)
-        # print(sum_temp.shape)
-        # print(sum_temp)
-        # break
 
         ## Get average value for -inf
         avg = 0.0
@@ -275,18 +236,9 @@ for K in range(2, 6):
         for i in range(0, 100):
             temp_log.append(np.log(sum_temp[i]))
 
-        # print temp_log
-        # break
         L = np.sum(temp_log)
 
         iterations += 1
-        # print previous_L
-        # print L
-        # print abs(L - previous_L)
-
-        # print
-        # print("Iterations Completed: ", str(iterations))
-        # print
 
         if abs(L - previous_L) < precision or iterations > 20:
             break
@@ -355,23 +307,11 @@ for K in range(2, 5):
         r = np.zeros((K, 100))
 
         for i in range(0, K):
-            # print covariance_epsilon[i]
             if covariance_epsilon[i] > 0.0:
-                # print "I am here"
                 nearest_cov = near_psd(sig_k[:, :, i], covariance_epsilon[i])
                 mvn = multivariate_normal(mean_k[i], nearest_cov) 
             else:
                 mvn = multivariate_normal(mean_k[i], sig_k[:, :, i])
-            # print(mean_k[i])
-            # print(sig_k[:, :, i])
-            # sig_diag = sig_k[:, :, i].diagonal()
-            # max_diag = sig_diag.max()
-            # sig_diag = sig_diag * 255 / max_diag
-            # sig_diag = sig_diag.reshape((7, 7))
-            # diag_image = np.array(np.round(sig_diag), dtype = np.uint8)
-            # cv2.imwrite("./test.jpg", diag_image)
-            # print(sig_diag)
-            # mvn = multivariate_normal(mean_k[i], sig_k[:, :, i])
             pdf = mvn.pdf(dataset_matrix)
             pdf = lambda_k[i] * pdf
             pdf = pdf.reshape((1, 100))
@@ -379,31 +319,12 @@ for K in range(2, 5):
 
         sum_norm = np.sum(norm, axis = 0)
         ## Fitting average value for sum_norm
-        # avg_sum = 0.0
-        # sum_ct = 0
-        # for i in range(0, 100):
-        #     if (sum_norm[i] > 0.0):
-        #         sum_ct += 1
-        #         avg_sum += sum_norm[i]
-
-        # avg_sum /= sum_ct
-        # for i in range(0, 100):
-        #     if (sum_norm[i] == 0.0):
-        #         sum_norm[i] = avg_sum
-        # print(norm.shape)
-        # print(norm)
-        # print(sum_norm.shape)
-        # print(sum_norm)
-        # break
-
         for i in range(0, 100):
             for k in range(0, K):
                 if sum_norm[i] == 0.0:
                     r[k, i] = 0.000001
                 else:
                     r[k, i] = norm[k, i] / sum_norm[i]
-        # print(r)
-        # break
 
         ## Maximization Step
         r_sum_all = np.sum(np.sum(r, axis = 0))
@@ -430,45 +351,20 @@ for K in range(2, 5):
                 new_sig_k += r[k][i] * np.matmul(x, x.T)
             new_sig_k = new_sig_k / r_sum_rows[k]
             sig_k[:, :, k] = new_sig_k
-        # print(lambda_k)
-        # print(mean_k.shape)
-        # print(mean_k)
-        # print(sig_k.shape)
-        # for i in range(0, 49):
-        #     print sig_k[0, i, 0],
-        # print
-        # print
-
-        # for i in range(0, 49):
-        #     print sig_k[1, i, 0],
-        # print
-
-        # print np.amin(sig_k[:, :, 0])
-        # break
             
         ## Compute log likelihood L
         temp = np.zeros((K, 100))
         for i in range(0, K):
             diag = np.amax(sig_k[:, :, i])
-            # print(math.sqrt(diag))
             covariance_epsilon[i] = math.sqrt(diag)
             nearest_cov = near_psd(sig_k[:, :, i], math.sqrt(diag))
-            # print(nearest_cov)
-            # nearest_cov = statsmodels.stats.correlation_tools.cov_nearest(sig_k[:, :, k], method = "nearest", n_fact = 10)
-            # print(nearest_cov_data)
-            # break
             mvn = multivariate_normal(mean_k[i], nearest_cov) 
             pdf = mvn.pdf(dataset_matrix)
             pdf = lambda_k[i] * pdf
             pdf = pdf.reshape((1, 100))
             temp[i, :] = pdf
 
-        # print covariance_epsilon
-        # break
         sum_temp = np.sum(temp, axis = 0)
-        # print(sum_temp.shape)
-        # print(sum_temp)
-        # break
 
         ## Get average value for -inf
         avg = 0.0
@@ -490,18 +386,9 @@ for K in range(2, 5):
         for i in range(0, 100):
             temp_log.append(np.log(sum_temp[i]))
 
-        # print temp_log
-        # break
         L = np.sum(temp_log)
 
         iterations += 1
-        # print previous_L
-        # print L
-        # print abs(L - previous_L)
-
-        # print
-        # print("Iterations Completed: ", str(iterations))
-        # print
 
         if abs(L - previous_L) < precision or iterations > 20:
             break

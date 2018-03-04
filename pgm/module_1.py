@@ -23,6 +23,7 @@ def save_covariance_image(filename, covariance, image_dim):
     cv2.imwrite(filename, image)
     print "Saving Image at - " + filename
     return
+
 def average_of_pdf(pdf, testImagesSize):
     avg = 0.0
     for i in pdf:
@@ -274,8 +275,8 @@ print "## Confusion Matrix ##"
 print str(true_positive), "  ", str(false_negative)
 print str(false_positive), "  ", str(true_negative)
 print
-print "False Positive Rate: ", str(false_positive), "%"
-print "False Negative Rate: ", str(false_negative), "%"
+print "False Positive Rate: ", str(float(false_positive)), "%"
+print "False Negative Rate: ", str(float(false_negative)), "%"
 print "Misclassification Rate: ", str(misclassification_rate), "%"
 print
 

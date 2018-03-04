@@ -27,8 +27,11 @@ def multivariate_t(X, mean, covariance, nu, D, size):
         pdf[0, i] = 1 + (pdf[0, i] / nu)
         pdf[0, i] = pdf[0, i] ** (-1 * (nu + D) / 2)
         pdf[0, i] = c * pdf[0, i]
-    
-    return pdf    
+
+    pdf_list = []
+    for i in range(0, size):
+        pdf_list.append(pdf[0, i])
+    return pdf_list    
 
 def near_psd(x, epsilon=0):
     '''
@@ -81,6 +84,108 @@ def t_cost(nu, E_h_i, E_h_i_sum, E_log_h_i, E_log_h_i_sum):
     val = val - (nu_half * E_h_i_sum)
     return val
 
+def save_mean_image(filename, mean, image_dim):
+    temp_mean = mean.reshape((image_dim, image_dim))
+    cv2.imwrite(filename, temp_mean)
+    print "Saving Image at - " + filename
+    return
+
+def save_covariance_image(filename, covariance, image_dim):
+    covariance_diag = covariance.diagonal()
+    max_val = max(covariance_diag)
+    covariance_diag = covariance_diag * 255 / max_val
+    image = covariance_diag.reshape((image_dim, image_dim))
+    image = np.array(np.round(image), dtype = np.uint8)
+    cv2.imwrite(filename, image)
+    print "Saving Image at - " + filename
+    return
+
+def average_of_pdf(pdf, testImagesSize):
+    avg = 0.0
+    for i in pdf:
+        avg += i
+    avg /= testImagesSize
+    return avg
+
+def compute_posterior(faces_pdf, non_faces_pdf, threshold, testImagesSize):
+    true_positive = 0
+    false_positive = 0    
+    true_negative = 0
+    false_negative = 0
+
+    faces_pdf_avg = average_of_pdf(faces_pdf, testImagesSize)
+    non_faces_pdf_avg = average_of_pdf(non_faces_pdf, testImagesSize)
+
+    for i in range(0, testImagesSize - 100):
+        if faces_pdf[i] == 0.0:
+            f = faces_pdf_avg * (10 ** -75)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] == 0.0:
+            nf = non_faces_pdf_avg * (10 ** -75)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+        
+        if (not math.isnan(z) and z > threshold):
+            true_positive += 1
+        else:
+            false_negative += 1
+
+    for i in range(100, testImagesSize):
+        if faces_pdf[i] == 0.0:
+            f = faces_pdf_avg * (10 ** -75)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] == 0.0:
+            nf = non_faces_pdf_avg * (10 ** -75)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+
+        if (not math.isnan(z) and z > threshold):
+            false_positive += 1
+        else:
+            true_negative += 1
+
+    # Misclassification Rate
+    misclassification_rate = float(false_positive + false_negative) / float(testImagesSize)
+    misclassification_rate = misclassification_rate * 100
+    return true_positive, false_negative, false_positive, true_negative, misclassification_rate
+
+def compute_posterior_pdf(faces_pdf, non_faces_pdf, testImagesSize):
+    posterior_pdf = [0.0] * testImagesSize
+
+    faces_pdf_avg = average_of_pdf(faces_pdf, testImagesSize)
+    non_faces_pdf_avg = average_of_pdf(non_faces_pdf, testImagesSize)
+    
+    for i in range(0, testImagesSize):
+        if faces_pdf[i] == 0.0:
+            f = faces_pdf_avg * (10 ** -75)
+        else:
+            f = faces_pdf[i]
+
+        if non_faces_pdf[i] == 0.0:
+            nf = non_faces_pdf_avg * (10 ** -75)
+        else:
+            nf = non_faces_pdf[i]
+
+        y = f + nf
+        x = f
+        z = x / y
+
+        if (not math.isnan(z)):
+            posterior_pdf[i] = z
+    return posterior_pdf
+
 D = 100
 training_faces_folder = "../training/faces/"
 faces_images = []
@@ -115,7 +220,6 @@ for filename in os.listdir(training_non_faces_folder):
 ## Faces t Distribution
 dataset_images = []
 for i in faces_images_rescaled_grayscale:
-    # for i in faces_images:
     im_reshape = i.reshape((1, D))
     dataset_images.append(im_reshape)
 
@@ -230,10 +334,6 @@ while True:
     L = L - ((nu_k + D) * log_delta_nu_sum)
 
     iterations += 1
-    print
-    print "Iterations Completed: " + str(iterations)
-    print
-
     if abs(L - previous_L) < precision or iterations > 100:
         break
     else:
@@ -246,7 +346,6 @@ faces_sig_k = sig_k
 ## Non-faces t Distribution
 dataset_images = []
 for i in non_faces_images_rescaled_gray:
-    # for i in faces_images:
     im_reshape = i.reshape((1, D))
     dataset_images.append(im_reshape)
 
@@ -361,10 +460,6 @@ while True:
     L = L - ((nu_k + D) * log_delta_nu_sum)
 
     iterations += 1
-    print
-    print "Iterations Completed: " + str(iterations)
-    print
-
     if abs(L - previous_L) < precision or iterations > 100:
         break
     else:
@@ -374,16 +469,109 @@ non_faces_nu_k = nu_k
 non_faces_mean_k = mean_k
 non_faces_sig_k = sig_k
 
-# print faces_nu_k
-# print faces_mean_k.shape
-# print faces_mean_k
-# print faces_sig_k.shape
-# print faces_sig_k
+## Test Dataset
+test_tuple_list = []
+faces_test_images = []
+test_faces_folder = "../test/faces/"
+for filename in os.listdir(test_faces_folder):
+    img = cv2.imread(os.path.join(test_faces_folder, filename), flags = cv2.IMREAD_COLOR)
+    Gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    Gray_img = cv2.resize(Gray_img, (10, 10))
+    if img is not None:
+        faces_test_images.append(Gray_img)
 
-# print non_faces_nu_k
-# print non_faces_mean_k.shape
-# print non_faces_mean_k
-# print non_faces_sig_k.shape
-# print non_faces_sig_k
+for im in faces_test_images:
+    key = im
+    im_reshape = key.reshape((1, D))
+    test_tuple_list.append(im_reshape)
 
-# print multivariate_t(dataset_matrix, non_faces_mean_k, non_faces_sig_k, non_faces_nu_k, D, 1000)
+non_faces_test_images = []
+test_non_faces_folder = "../test/non_faces/"
+for filename in os.listdir(test_non_faces_folder):
+    img = cv2.imread(os.path.join(test_non_faces_folder, filename), flags = cv2.IMREAD_COLOR)
+    Gray_img = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    Gray_img = cv2.resize(Gray_img, (10, 10))
+    if img is not None:
+        non_faces_test_images.append(Gray_img)
+
+for im in non_faces_test_images:
+    key = im
+    im_reshape = key.reshape((1, D))
+    test_tuple_list.append(im_reshape)
+
+test_tuple = tuple(test_tuple_list)
+test_matrix = np.vstack(test_tuple)
+
+DEFAULT_RESULT_LOCATION = "./results/module_3/"
+
+# Faces t distribution PDF
+faces_pdf = multivariate_t(test_matrix, faces_mean_k, faces_sig_k, faces_nu_k, D, 200)
+
+# Non-faces t distribution PDF
+non_faces_pdf = multivariate_t(test_matrix, non_faces_mean_k, non_faces_sig_k, non_faces_nu_k, D, 200)
+
+# Save Mean Face Result
+faces_mean_filename = DEFAULT_RESULT_LOCATION + "mean/faces.jpg"
+save_mean_image(faces_mean_filename, faces_mean_k, 10)
+
+# Save Mean Non-Face Result
+non_faces_mean_filename = DEFAULT_RESULT_LOCATION + "mean/non_faces.jpg"
+save_mean_image(non_faces_mean_filename, non_faces_mean_k, 10)
+
+# Save Covariance Face Result
+faces_covariance_filename = DEFAULT_RESULT_LOCATION + "covariance/faces.jpg"
+save_covariance_image(faces_covariance_filename, faces_sig_k, 10)
+
+# Save Covariance Non-Face Result
+non_faces_covariance_filename = DEFAULT_RESULT_LOCATION + "covariance/non_faces.jpg"
+save_covariance_image(non_faces_covariance_filename, non_faces_sig_k, 10)
+
+# Compute Posterior
+true_positive, false_negative, false_positive, true_negative, misclassification_rate = compute_posterior(faces_pdf, non_faces_pdf, 0.5, 200)
+print
+print "## Confusion Matrix ##"
+print str(true_positive), "  ", str(false_negative)
+print str(false_positive), "  ", str(true_negative)
+print
+print "False Positive Rate: ", str(float(false_positive)), "%"
+print "False Negative Rate: ", str(float(false_negative)), "%"
+print "Misclassification Rate: ", str(misclassification_rate), "%"
+print
+
+# ROC Curve plot
+false_positives = []
+true_positives = []
+
+# Find the nearest power for the lowest posterior value
+posterior_pdf = compute_posterior_pdf(faces_pdf, non_faces_pdf, 200)
+lowest_posterior_value = min(posterior_pdf)
+maximum_posterior_value = max(posterior_pdf)
+power_count = 0
+temp = lowest_posterior_value
+
+while temp < 1.0 and temp > 0.0:
+    temp = temp * (10 ** power_count)
+    power_count += 1
+
+power_count = -1 * power_count
+
+# Compute ROC Curve
+initial_limit = maximum_posterior_value
+end_limit = 0.0 - (10 ** -7)
+
+for i in np.arange(initial_limit, end_limit, -1 * (10 ** -7)):
+        tp, _, fp, _, _ = compute_posterior(faces_pdf, non_faces_pdf, i, 200)
+        false_positives.append(float(fp) / float(100))
+        true_positives.append(float(tp) / float(100))
+
+tp, _, fp, _, _ = compute_posterior(faces_pdf, non_faces_pdf, 0.0, 200)
+false_positives.append(float(fp) / float(100))
+true_positives.append(float(tp) / float(100))
+
+plt.title('Receiver Operating Characteristic (ROC)')
+plt.xlim([0, 1])
+plt.ylim([0, 1])
+plt.ylabel('True Positive Rate')
+plt.xlabel('False Positive Rate')
+plt.plot(false_positives, true_positives, marker='o')
+plt.show()
